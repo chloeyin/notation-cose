@@ -1,108 +1,71 @@
 package main
 
 import (
-	"crypto"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
-	"strings"
 
-	"github.com/microsoft/notation-cose/pkg/cose"
-	"github.com/microsoft/notation-cose/pkg/protocol"
-	"github.com/notaryproject/notation-go"
-	"github.com/notaryproject/notation-go/crypto/cryptoutil"
-	"github.com/notaryproject/notation-go/crypto/timestamp"
+	"github.com/microsoft/notation-cose/internal/signature"
+	"github.com/notaryproject/notation-go/plugin"
 	"github.com/urfave/cli/v2"
 )
 
 var signCommand = &cli.Command{
-	Name:      "sign",
-	Usage:     "Sign artifacts in COSE",
-	ArgsUsage: "<reference>",
-	Action:    runSign,
+	Name:   string(plugin.CommandGenerateEnvelope),
+	Usage:  "Sign artifacts in COSE",
+	Action: runSign,
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:      "file",
+			Usage:     "request json file",
+			TakesFile: true,
+			Hidden:    true,
+		},
+	},
 }
 
 func runSign(ctx *cli.Context) error {
-	// initialize
-	args := ctx.Args()
-	if args.Len() != 1 {
-		return errors.New("missing request")
+	var r io.Reader
+	if f := ctx.String("file"); f != "" {
+		var err error
+		r, err = os.Open(f)
+		if err != nil {
+			return err
+		}
+	} else {
+		r = os.Stdin
 	}
 
-	// parse request
-	var req protocol.SignRequest
-	if err := json.Unmarshal([]byte(args.Get(0)), &req); err != nil {
-		return err
+	var (
+		req plugin.GenerateEnvelopeRequest
+		err error
+	)
+	err = json.NewDecoder(r).Decode(&req)
+	if err != nil {
+		return plugin.RequestError{
+			Code: plugin.ErrorCodeValidation,
+			Err:  fmt.Errorf("failed to unmarshal request input: %w", err),
+		}
 	}
 
 	// sign artifact
-	signer, opts, err := getSignerWithOptions(req.KMSProfile.ID, req.SignOptions)
+	resp, err := signature.Sign(ctx.Context, &req)
 	if err != nil {
-		return err
+		var rerr plugin.RequestError
+		if errors.As(err, &rerr) {
+			return rerr
+		}
+		return fmt.Errorf("failed to sign payload: %w", err)
 	}
-	sig, err := signer.Sign(ctx.Context, req.Descriptor, opts)
+
+	jsonResp, err := json.Marshal(resp)
 	if err != nil {
 		return err
 	}
 
 	// write response
-	_, err = os.Stdout.Write(sig)
+	os.Stdout.Write(jsonResp)
 	return err
-}
-
-func getSignerWithOptions(keyInfo string, opts notation.SignOptions) (notation.Signer, notation.SignOptions, error) {
-	// parse options
-	items := strings.SplitN(keyInfo, ":", 3)
-	if len(items) < 2 {
-		return nil, opts, errors.New("missing signing key pair")
-	}
-	keyPath := items[0]
-	certPath := items[1]
-	var tsEndpoint string
-	if len(items) > 2 {
-		tsEndpoint = items[2]
-	}
-
-	// read key / cert pair
-	keyPEM, err := os.ReadFile(keyPath)
-	if err != nil {
-		return nil, opts, err
-	}
-	certPEM, err := os.ReadFile(certPath)
-	if err != nil {
-		return nil, opts, err
-	}
-	keyPair, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return nil, opts, err
-	}
-
-	// parse cert
-	certs, err := cryptoutil.ParseCertificatePEM(certPEM)
-	if err != nil {
-		return nil, opts, err
-	}
-
-	// construct signer
-	privateKey, ok := keyPair.PrivateKey.(crypto.Signer)
-	if !ok {
-		return nil, opts, errors.New("unsupported private key")
-	}
-	signer, err := cose.NewSigner(privateKey, certs)
-	if err != nil {
-		return nil, opts, err
-	}
-
-	// hack: refine options
-	// notation#feat-kv-extensibility uses an older version of notation-go-lib,
-	// which does not support TSA in options.
-	if tsEndpoint != "" {
-		tsa, err := timestamp.NewHTTPTimestamper(nil, tsEndpoint)
-		if err != nil {
-			return nil, opts, err
-		}
-		opts.TSA = tsa
-	}
-	return signer, opts, nil
 }

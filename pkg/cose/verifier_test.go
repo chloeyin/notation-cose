@@ -3,6 +3,7 @@ package cose
 import (
 	"context"
 	"crypto/x509"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -30,7 +31,8 @@ func TestVerifyWithCertChain(t *testing.T) {
 
 	ctx := context.Background()
 	desc, sOpts := generateSigningContent(nil)
-	sig, err := s.Sign(ctx, desc, sOpts)
+	payload, _ := json.Marshal(desc)
+	sig, err := s.Sign(ctx, payload, sOpts)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -80,7 +82,8 @@ func TestVerifyWithTimestamp(t *testing.T) {
 	// sign content
 	ctx := context.Background()
 	desc, sOpts := generateSigningContent(tsa)
-	sig, err := s.Sign(ctx, desc, sOpts)
+	payload, _ := json.Marshal(desc)
+	sig, err := s.Sign(ctx, payload, sOpts)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}

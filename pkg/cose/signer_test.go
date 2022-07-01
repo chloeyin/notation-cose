@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"math"
 	"math/big"
 	"testing"
@@ -15,12 +16,6 @@ import (
 	"github.com/notaryproject/notation-go/crypto/timestamp/timestamptest"
 	"github.com/opencontainers/go-digest"
 )
-
-func TestSignerInterface(t *testing.T) {
-	if _, ok := interface{}(&Signer{}).(notation.Signer); !ok {
-		t.Error("&Signer{} does not conform notation.Signer")
-	}
-}
 
 func TestSignWithCertChain(t *testing.T) {
 	// sign with key
@@ -35,7 +30,8 @@ func TestSignWithCertChain(t *testing.T) {
 
 	ctx := context.Background()
 	desc, sOpts := generateSigningContent(nil)
-	sig, err := s.Sign(ctx, desc, sOpts)
+	payload, _ := json.Marshal(desc)
+	sig, err := s.Sign(ctx, payload, sOpts)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -70,7 +66,8 @@ func TestSignWithTimestamp(t *testing.T) {
 	// sign content
 	ctx := context.Background()
 	desc, sOpts := generateSigningContent(tsa)
-	sig, err := s.Sign(ctx, desc, sOpts)
+	payload, _ := json.Marshal(desc)
+	sig, err := s.Sign(ctx, payload, sOpts)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}
@@ -99,7 +96,8 @@ func TestSignWithoutExpiry(t *testing.T) {
 	ctx := context.Background()
 	desc, sOpts := generateSigningContent(nil)
 	sOpts.Expiry = time.Time{} // reset expiry
-	sig, err := s.Sign(ctx, desc, sOpts)
+	payload, _ := json.Marshal(desc)
+	sig, err := s.Sign(ctx, payload, sOpts)
 	if err != nil {
 		t.Fatalf("Sign() error = %v", err)
 	}

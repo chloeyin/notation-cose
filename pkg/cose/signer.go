@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -63,17 +62,9 @@ func NewSignerWithCertificateChain(alg cose.Algorithm, key crypto.Signer, certCh
 
 // Sign signs the artifact described by its descriptor, and returns the
 // signature.
-func (s *Signer) Sign(ctx context.Context, desc notation.Descriptor, opts notation.SignOptions) ([]byte, error) {
-	if err := opts.Validate(); err != nil {
-		return nil, err
-	}
-
+func (s *Signer) Sign(ctx context.Context, payload []byte, opts notation.SignOptions) ([]byte, error) {
 	// generate COSE signature
 	msg := cose.NewSign1Message()
-	payload, err := json.Marshal(desc)
-	if err != nil {
-		return nil, err
-	}
 	msg.Payload = payload
 	msg.Headers.Protected = cose.ProtectedHeader{
 		cose.HeaderLabelAlgorithm: s.base.Algorithm(),
